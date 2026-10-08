@@ -1,0 +1,757 @@
+===== src/main.rs =====
+0001: // Load the arbitrage module containing the engine, DEX type, and opportunity model.
+0002: mod arbitrage;
+0003: // Load the pool module containing the AMM reserve and quote logic.
+0004: mod pools;
+0005: // Load the token module containing token metadata and amount formatting.
+0006: mod tokens;
+0007: 
+0008: // Import the arbitrage engine that evaluates routes between pools.
+0009: use arbitrage::engine::ArbitrageEngine;
+0010: // Import the DEX enum used to identify each simulated venue.
+0011: use arbitrage::dex::Dex;
+0012: // Import the opportunity type so we can print a detailed result.
+0013: use arbitrage::opportunity::Opportunity;
+0014: // Import the pool type used to construct our test market.
+0015: use pools::pool::Pool;
+0016: // Import the token type used to construct USDC and ETH.
+0017: use tokens::token::Token;
+0018: 
+0019: // Add comma separators to the integer portion of a decimal string.
+0020: fn add_commas(number: &str) -> String {
+0021:     // Split a possible negative sign away from the numeric digits.
+0022:     let (sign, digits) = if let Some(rest) = number.strip_prefix('-') {
+0023:         // Preserve the negative sign separately.
+0024:         ("-", rest)
+0025:     } else {
+0026:         // Use an empty sign for non-negative values.
+0027:         ("", number)
+0028:     };
+0029: 
+0030:     // Build the grouped integer from the right side in three-digit chunks.
+0031:     let mut grouped = String::new();
+0032:     // Read the digits in reverse order so grouping is easy.
+0033:     for (index, character) in digits.chars().rev().enumerate() {
+0034:         // Insert a comma before every new three-digit group.
+0035:         if index > 0 && index % 3 == 0 {
+0036:             // Add the thousands separator.
+0037:             grouped.push(',');
+0038:         }
+0039:         // Add the current digit.
+0040:         grouped.push(character);
+0041:     }
+0042: 
+0043:     // Reverse the grouped string back into normal reading order.
+0044:     let grouped: String = grouped.chars().rev().collect();
+0045:     // Put the sign back in front of the grouped number.
+0046:     format!("{sign}{grouped}")
+0047: }
+0048: 
+0049: // Format a floating-point number with two decimal places and comma separators.
+0050: fn format_decimal(value: f64) -> String {
+0051:     // Convert the value to exactly two decimal places.
+0052:     let raw = format!("{value:.2}");
+0053:     // Split the number around its decimal point.
+0054:     let mut pieces = raw.split('.');
+0055:     // Read the integer component.
+0056:     let integer = pieces.next().unwrap_or("0");
+0057:     // Read the fractional component.
+0058:     let fraction = pieces.next().unwrap_or("00");
+0059:     // Add grouping to the integer component.
+0060:     let grouped_integer = add_commas(integer);
+0061:     // Reassemble the formatted decimal number.
+0062:     format!("{grouped_integer}.{fraction}")
+0063: }
+0064: 
+0065: // Format a raw token amount as a human-readable dollar value for USDC.
+0066: fn format_usdc(raw_amount: u128) -> String {
+0067:     // Convert six-decimal USDC base units to a floating-point number for display only.
+0068:     let value = raw_amount as f64 / 1_000_000.0;
+0069:     // Return the value with a dollar sign and comma separators.
+0070:     format!("${}", format_decimal(value))
+0071: }
+0072: 
+0073: // Format a raw ETH amount as a human-readable ETH value.
+0074: fn format_eth(raw_amount: u128) -> String {
+0075:     // Convert eighteen-decimal ETH base units to ETH for display only.
+0076:     let value = raw_amount as f64 / 1_000_000_000_000_000_000.0;
+0077:     // Return the ETH amount with six decimal places.
+0078:     format!("{value:.6} ETH")
+0079: }
+0080: 
+0081: // Convert basis points into a percentage string.
+0082: fn format_bps(bps: u128) -> String {
+0083:     // One basis point equals 0.01 percent, so divide by 100.
+0084:     let percentage = bps as f64 / 100.0;
+0085:     // Return the percentage with two decimal places.
+0086:     format!("{percentage:.2}%")
+0087: }
+0088: 
+0089: // Print one complete opportunity using the fields instead of relying on Debug output.
+0090: fn print_opportunity(opportunity: &Opportunity, min_profit: u128) {
+0091:     // Print a visual separator before the opportunity report.
+0092:     println!();
+0093:     // Print the report heading.
+0094:     println!("============================================================");
+0095:     // Print the route heading.
+0096:     println!("ARBITRAGE OPPORTUNITY");
+0097:     // Print the second separator.
+0098:     println!("============================================================");
+0099: 
+0100:     // Print the route tokens.
+0101:     println!(
+0102:         "Route:            {} -> {} -> {}",
+0103:         opportunity.token_in, opportunity.token_mid, opportunity.token_in
+0104:     );
+0105: 
+0106:     // Print the DEX route.
+0107:     println!(
+0108:         "DEX route:        {} -> {}",
+0109:         opportunity.buy_dex, opportunity.sell_dex
+0110:     );
+0111: 
+0112:     // Print the first-leg section heading.
+0113:     println!();
+0114:     println!("LEG 1 — BUY / ACQUIRE {}", opportunity.token_mid);
+0115:     println!("------------------------------------------------------------");
+0116: 
+0117:     // Print the exact first-leg input amount stored inside the first quote.
+0118:     println!("Input:             {}", format_usdc(opportunity.quote_first.amount_in));
+0119:     // Print the first-leg token amount received.
+0120:     println!("Output:            {}", format_eth(opportunity.quote_first.amount_out));
+0121:     // Print the first-leg swap fee in its native input unit.
+0122:     println!("Swap fee:          {}", format_usdc(opportunity.quote_first.fee_amount));
+0123:     // Print the first-leg price impact.
+0124:     println!(
+0125:         "Price impact:      {}",
+0126:         format_bps(opportunity.quote_first.price_impact_bps)
+0127:     );
+0128: 
+0129:     // Print the second-leg section heading.
+0130:     println!();
+0131:     println!("LEG 2 — SELL {}", opportunity.token_mid);
+0132:     println!("------------------------------------------------------------");
+0133: 
+0134:     // Print the exact second-leg input amount stored inside the second quote.
+0135:     println!("Input:             {}", format_eth(opportunity.quote_second.amount_in));
+0136:     // Print the second-leg output amount.
+0137:     println!("Output:            {}", format_usdc(opportunity.amount_out));
+0138:     // Print the second-leg swap fee in ETH because ETH is the input to leg two.
+0139:     println!("Swap fee:          {}", format_eth(opportunity.quote_second.fee_amount));
+0140:     // Print the second-leg price impact.
+0141:     println!(
+0142:         "Price impact:      {}",
+0143:         format_bps(opportunity.quote_second.price_impact_bps)
+0144:     );
+0145: 
+0146:     // Print the final P&L section.
+0147:     println!();
+0148:     println!("PROFIT ANALYSIS");
+0149:     println!("------------------------------------------------------------");
+0150: 
+0151:     // Print the original input.
+0152:     println!("Starting capital:  {}", format_usdc(opportunity.amount_in));
+0153:     // Print the final output after both swaps.
+0154:     println!("Final capital:     {}", format_usdc(opportunity.amount_out));
+0155:     // Print gross profit before gas.
+0156:     println!("Gross profit:      {}", format_profit(opportunity.gross_profit));
+0157:     // Print the estimated gas cost.
+0158:     println!("Estimated gas:     {}", format_usdc(opportunity.gas_cost));
+0159: 
+0160:     // Print net profit after gas.
+0161:     println!("Net profit:        {}", format_profit(opportunity.net_profit));
+0162: 
+0163:     // Calculate the net ROI using the starting capital.
+0164:     let roi = opportunity.net_profit as f64 / opportunity.amount_in as f64 * 100.0;
+0165:     // Print the net ROI.
+0166:     println!("Net ROI:           {roi:.4}%");
+0167: 
+0168:     // Print the configured minimum profit.
+0169:     println!("Minimum required:  {}", format_usdc(min_profit));
+0170: 
+0171:     // Print whether the route passes our profitability threshold.
+0172:     if opportunity.is_profitable(min_profit) {
+0173:         // Show the successful state.
+0174:         println!("STATUS:            PROFITABLE");
+0175:     } else {
+0176:         // Show the rejected state.
+0177:         println!("STATUS:            NOT PROFITABLE");
+0178:     }
+0179: 
+0180:     // Print the closing separator.
+0181:     println!("============================================================");
+0182: }
+0183: 
+0184: // Format a signed profit amount using six-decimal USDC base units.
+0185: fn format_profit(raw_profit: i128) -> String {
+0186:     // Convert the signed base-unit value into a dollar value.
+0187:     let value = raw_profit as f64 / 1_000_000.0;
+0188:     // Select an explicit plus sign for non-negative profit and retain the minus sign for losses.
+0189:     let sign = if value >= 0.0 { "+" } else { "" };
+0190:     // Combine the explicit sign with our comma-formatted dollar value.
+0191:     format!("{sign}${}", format_decimal(value.abs()))
+0192: }
+0193: 
+0194: // Print the configured pool information.
+0195: fn print_pool(pool: &Pool) {
+0196:     // Print the exchange and pair name.
+0197:     println!(
+0198:         "{:<10} | {} / {}",
+0199:         pool.dex, pool.token_a.symbol, pool.token_b.symbol
+0200:     );
+0201:     // Print the fee.
+0202:     println!("  Fee:         {} bps", pool.fee_bps);
+0203:     // Print the simplified liquidity score so the field is actively used.
+0204:     println!("  Liquidity:   {}", pool.liquidity);
+0205:     // Print the ETH reserve using ETH's 18-decimal base unit.
+0206:     println!("  Reserve A:   {}", pool.token_a.format_raw(pool.reserve_a));
+0207:     // Print the USDC reserve using USDC's 6-decimal base unit.
+0208:     println!("  Reserve B:   {}", pool.token_b.format_raw(pool.reserve_b));
+0209: }
+0210: 
+0211: // The main function is the program entry point.
+0212: fn main() {
+0213:     // Print a startup banner.
+0214:     println!("Crypto arbitrage engine starting...");
+0215:     // Print the version of this simulator.
+0216:     println!("Stage 2 — quote engine + route scanner + detailed reporting");
+0217: 
+0218:     // Create the USDC token with six decimal places.
+0219:     let usdc = Token::new("USDC", 6);
+0220:     // Create the ETH token with eighteen decimal places.
+0221:     let eth = Token::new("ETH", 18);
+0222: 
+0223:     // Print the token configuration.
+0224:     println!();
+0225:     println!("TOKEN CONFIGURATION");
+0226:     println!("------------------------------------------------------------");
+0227:     println!("Token: {} | decimals: {}", usdc.symbol, usdc.decimals);
+0228:     println!("Token: {} | decimals: {}", eth.symbol, eth.decimals);
+0229: 
+0230:     // Use realistic reserve unit conventions:
+0231:     // 40,000 USDC and roughly 100 ETH per simulated pool.
+0232:     let usdc_reserve = 40_000_u128 * 1_000_000_u128;
+0233:     // Make Uniswap cheaper because it has more ETH against the same USDC reserve.
+0234:     let uniswap_eth_reserve = 105_u128 * 1_000_000_000_000_000_000_u128;
+0235:     // Make SushiSwap more expensive because it has less ETH against the same USDC reserve.
+0236:     let sushiswap_eth_reserve = 95_u128 * 1_000_000_000_000_000_000_u128;
+0237: 
+0238:     // Construct the first simulated pool.
+0239:     let uniswap_pool = Pool::new(
+0240:         eth.clone(),
+0241:         usdc.clone(),
+0242:         30,
+0243:         105,
+0244:         uniswap_eth_reserve,
+0245:         usdc_reserve,
+0246:         Dex::UniswapV2,
+0247:     );
+0248: 
+0249:     // Construct the second simulated pool.
+0250:     let sushiswap_pool = Pool::new(
+0251:         eth.clone(),
+0252:         usdc.clone(),
+0253:         30,
+0254:         95,
+0255:         sushiswap_eth_reserve,
+0256:         usdc_reserve,
+0257:         Dex::SushiSwap,
+0258:     );
+0259: 
+0260:     // Print the market configuration.
+0261:     println!();
+0262:     println!("SIMULATED MARKET");
+0263:     println!("------------------------------------------------------------");
+0264:     print_pool(&uniswap_pool);
+0265:     println!();
+0266:     print_pool(&sushiswap_pool);
+0267: 
+0268:     // Require at least 1 USDC of net profit before a route is considered actionable.
+0269:     let minimum_profit = 1_u128 * 1_000_000_u128;
+0270:     // Estimate 5 USDC of gas for this local simulation.
+0271:     let estimated_gas = 5_u128 * 1_000_000_u128;
+0272: 
+0273:     // Create a mutable arbitrage engine because pools will be added to it.
+0274:     let mut engine = ArbitrageEngine::new(minimum_profit, estimated_gas);
+0275:     // Add the Uniswap pool to the engine's market database.
+0276:     engine.add_pool(uniswap_pool);
+0277:     // Add the SushiSwap pool to the engine's market database.
+0278:     engine.add_pool(sushiswap_pool);
+0279: 
+0280:     // Test a 1,000 USDC starting amount.
+0281:     let amount_in = 1_000_u128 * 1_000_000_u128;
+0282: 
+0283:     // Print the scan configuration.
+0284:     println!();
+0285:     println!("SCAN CONFIGURATION");
+0286:     println!("------------------------------------------------------------");
+0287:     println!("Starting amount:  {}", format_usdc(amount_in));
+0288:     println!("Gas estimate:     {}", format_usdc(estimated_gas));
+0289:     println!("Min net profit:   {}", format_usdc(minimum_profit));
+0290: 
+0291:     // Scan every valid two-pool route for USDC -> ETH -> USDC.
+0292:     let candidates = engine.scan(&usdc, &eth, amount_in);
+0293: 
+0294:     // Print how many routes were evaluated.
+0295:     println!();
+0296:     println!("Routes evaluated: {}", candidates.len());
+0297: 
+0298:     // Find the single best route by net profit.
+0299:     let best = candidates.first();
+0300: 
+0301:     // Print the best route when at least one valid route exists.
+0302:     if let Some(best_opportunity) = best {
+0303:         // Print the best route details.
+0304:         print_opportunity(best_opportunity, engine.minimum_profit());
+0305: 
+0306:         // Count all routes that actually pass the configured threshold.
+0307:         let profitable_count = candidates
+0308:             .iter()
+0309:             .filter(|opportunity| opportunity.is_profitable(engine.minimum_profit()))
+0310:             .count();
+0311: 
+0312:         // Print the number of actionable routes.
+0313:         println!("Profitable opportunities found: {profitable_count}");
+0314:     } else {
+0315:         // Explain that no valid two-pool route existed at all.
+0316:         println!("Profitable opportunities found: 0");
+0317:         println!("No valid two-pool route was found for this token pair.");
+0318:     }
+0319: }
+
+===== src/tokens/token.rs =====
+0001: // Derive Clone so token metadata can be reused by multiple pools.
+0002: #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+0003: // Store the metadata needed to interpret token amounts.
+0004: pub struct Token {
+0005:     // Store the human-readable ticker symbol.
+0006:     pub symbol: String,
+0007:     // Store the token's number of decimal places.
+0008:     pub decimals: u8,
+0009: }
+0010: 
+0011: // Implement constructors and formatting helpers for Token.
+0012: impl Token {
+0013:     // Create a token from a symbol and decimal count.
+0014:     pub fn new(symbol: &str, decimals: u8) -> Self {
+0015:         // Return a fully initialized token.
+0016:         Self {
+0017:             // Convert the borrowed symbol into owned string data.
+0018:             symbol: symbol.to_string(),
+0019:             // Store the decimal precision.
+0020:             decimals,
+0021:         }
+0022:     }
+0023: 
+0024:     // Convert a raw integer amount into a human-readable decimal string.
+0025:     pub fn format_raw(&self, raw_amount: u128) -> String {
+0026:         // Convert the raw amount into a string so we can place the decimal point exactly.
+0027:         let raw = raw_amount.to_string();
+0028: 
+0029:         // Handle tokens that use zero decimal places.
+0030:         if self.decimals == 0 {
+0031:             // Return the raw integer directly.
+0032:             return raw;
+0033:         }
+0034: 
+0035:         // Convert the decimal count to usize for string indexing.
+0036:         let decimals = self.decimals as usize;
+0037: 
+0038:         // Add leading zeroes when the raw value has fewer digits than the decimal count.
+0039:         let padded = if raw.len() <= decimals {
+0040:             // Create enough leading zeroes for a value smaller than one whole token.
+0041:             format!("{}{}", "0".repeat(decimals + 1 - raw.len()), raw)
+0042:         } else {
+0043:             // Reuse the raw string when it already has enough integer digits.
+0044:             raw
+0045:         };
+0046: 
+0047:         // Split the padded value into the integer portion and fractional portion.
+0048:         let split_index = padded.len() - decimals;
+0049:         // Extract the integer portion.
+0050:         let integer_part = &padded[..split_index];
+0051:         // Extract the fractional portion.
+0052:         let fractional_part = &padded[split_index..];
+0053: 
+0054:         // Remove insignificant trailing zeroes from the fractional part.
+0055:         let fractional_trimmed = fractional_part.trim_end_matches('0');
+0056: 
+0057:         // Return just the integer part when the fractional part is all zeroes.
+0058:         if fractional_trimmed.is_empty() {
+0059:             // Return the clean whole-token value.
+0060:             return integer_part.to_string();
+0061:         }
+0062: 
+0063:         // Combine the integer and fractional portions.
+0064:         format!("{integer_part}.{fractional_trimmed}")
+0065:     }
+0066: }
+
+===== src/pools/pool.rs =====
+0001: // Import the DEX identifier so every pool can identify its venue.
+0002: use crate::arbitrage::dex::Dex;
+0003: // Import the token metadata used by this pool.
+0004: use crate::tokens::token::Token;
+0005: 
+0006: // Store ten-thousandths as the basis-point fee denominator.
+0007: const FEE_DENOMINATOR: u128 = 10_000;
+0008: 
+0009: // Store the result of one AMM quote.
+0010: #[derive(Clone, Debug)]
+0011: pub struct Quote {
+0012:     // Store the input amount supplied to the swap.
+0013:     pub amount_in: u128,
+0014:     // Store the amount received from the swap.
+0015:     pub amount_out: u128,
+0016:     // Store the fee charged in the input token's base units.
+0017:     pub fee_amount: u128,
+0018:     // Store the estimated price impact in basis points.
+0019:     pub price_impact_bps: u128,
+0020: }
+0021: 
+0022: // Define a constant-product AMM liquidity pool.
+0023: #[derive(Clone, Debug)]
+0024: pub struct Pool {
+0025:     // Store the first token in the pair.
+0026:     pub token_a: Token,
+0027:     // Store the second token in the pair.
+0028:     pub token_b: Token,
+0029:     // Store the swap fee in basis points.
+0030:     pub fee_bps: u32,
+0031:     // Store a simple human-readable liquidity score for this simulation.
+0032:     pub liquidity: u128,
+0033:     // Store reserve A in the token's base units.
+0034:     pub reserve_a: u128,
+0035:     // Store reserve B in the token's base units.
+0036:     pub reserve_b: u128,
+0037:     // Store the simulated DEX where this pool exists.
+0038:     pub dex: Dex,
+0039: }
+0040: 
+0041: // Implement pool construction and AMM pricing.
+0042: impl Pool {
+0043:     // Construct a new pool from token metadata, reserves, fees, and venue information.
+0044:     pub fn new(
+0045:         token_a: Token,
+0046:         token_b: Token,
+0047:         fee_bps: u32,
+0048:         liquidity: u128,
+0049:         reserve_a: u128,
+0050:         reserve_b: u128,
+0051:         dex: Dex,
+0052:     ) -> Self {
+0053:         // Reject impossible fee values before creating a pool.
+0054:         assert!(
+0055:             fee_bps < FEE_DENOMINATOR as u32,
+0056:             "Pool fee must be below 100%"
+0057:         );
+0058: 
+0059:         // Return the fully initialized pool.
+0060:         Self {
+0061:             // Store token A.
+0062:             token_a,
+0063:             // Store token B.
+0064:             token_b,
+0065:             // Store the fee.
+0066:             fee_bps,
+0067:             // Store the liquidity score.
+0068:             liquidity,
+0069:             // Store reserve A.
+0070:             reserve_a,
+0071:             // Store reserve B.
+0072:             reserve_b,
+0073:             // Store the exchange identifier.
+0074:             dex,
+0075:         }
+0076:     }
+0077: 
+0078:     // Check whether this pool can perform the requested token swap.
+0079:     pub fn supports_pair(&self, token_in: &Token, token_out: &Token) -> bool {
+0080:         // Require positive reserves because an empty pool cannot execute a quote.
+0081:         let has_liquidity = self.reserve_a > 0 && self.reserve_b > 0 && self.liquidity > 0;
+0082:         // Check the normal A -> B orientation.
+0083:         let forward = self.token_a == *token_in && self.token_b == *token_out;
+0084:         // Check the reverse B -> A orientation.
+0085:         let reverse = self.token_b == *token_in && self.token_a == *token_out;
+0086:         // Return true only when the pair and liquidity are both valid.
+0087:         has_liquidity && (forward || reverse)
+0088:     }
+0089: 
+0090:     // Calculate a swap quote without mutating the pool.
+0091:     pub fn quote(&self, token_in: &Token, amount_in: u128) -> Option<Quote> {
+0092:         // Reject zero-sized swaps.
+0093:         if amount_in == 0 {
+0094:             // A zero-input quote has no useful economic meaning.
+0095:             return None;
+0096:         }
+0097: 
+0098:         // Determine whether token A is entering the pool.
+0099:         let input_is_a = self.token_a == *token_in;
+0100:         // Select the correct input reserve for the swap direction.
+0101:         let reserve_in = if input_is_a {
+0102:             self.reserve_a
+0103:         } else {
+0104:             self.reserve_b
+0105:         };
+0106:         // Select the correct output reserve for the swap direction.
+0107:         let reserve_out = if input_is_a {
+0108:             self.reserve_b
+0109:         } else {
+0110:             self.reserve_a
+0111:         };
+0112: 
+0113:         // Reject empty reserves because the AMM formula would be invalid.
+0114:         if reserve_in == 0 || reserve_out == 0 {
+0115:             // Return no quote when the pool cannot provide liquidity.
+0116:             return None;
+0117:         }
+0118: 
+0119:         // Calculate the portion of the input that remains after the pool fee.
+0120:         let fee_adjusted_input =
+0121:             amount_in.saturating_mul(FEE_DENOMINATOR - self.fee_bps as u128)
+0122:                 / FEE_DENOMINATOR;
+0123: 
+0124:         // Calculate the explicit fee in the input token's base units.
+0125:         let fee_amount = amount_in.saturating_sub(fee_adjusted_input);
+0126: 
+0127:         // Calculate the numerator of the constant-product output formula.
+0128:         let numerator = fee_adjusted_input.saturating_mul(reserve_out);
+0129:         // Calculate the denominator of the constant-product output formula.
+0130:         let denominator = reserve_in.saturating_add(fee_adjusted_input);
+0131: 
+0132:         // Reject an invalid denominator even though normal pool state makes this impossible.
+0133:         if denominator == 0 {
+0134:             // Return no quote when arithmetic would otherwise be invalid.
+0135:             return None;
+0136:         }
+0137: 
+0138:         // Calculate the actual output after price impact and fees.
+0139:         let amount_out = numerator / denominator;
+0140: 
+0141:         // Calculate the theoretical output at the current spot price after fees but before price impact.
+0142:         let spot_output = fee_adjusted_input.saturating_mul(reserve_out) / reserve_in;
+0143: 
+0144:         // Estimate price impact in basis points.
+0145:         let price_impact_bps = if spot_output == 0 {
+0146:             // Report zero when the theoretical output is too small to calculate impact.
+0147:             0
+0148:         } else {
+0149:             // Calculate the percentage of theoretical output lost to price impact.
+0150:             let impact_numerator = spot_output.saturating_sub(amount_out);
+0151:             // Convert that ratio to basis points using integer arithmetic.
+0152:             impact_numerator.saturating_mul(10_000) / spot_output
+0153:         };
+0154: 
+0155:         // Return the complete quote object.
+0156:         Some(Quote {
+0157:             // Store the original input amount.
+0158:             amount_in,
+0159:             // Store the actual output.
+0160:             amount_out,
+0161:             // Store the input-token fee.
+0162:             fee_amount,
+0163:             // Store estimated price impact.
+0164:             price_impact_bps,
+0165:         })
+0166:     }
+0167: }
+
+===== src/arbitrage/dex.rs =====
+0001: // Derive traits needed to copy, compare, debug, and hash DEX identifiers.
+0002: #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+0003: // Identify the simulated decentralized exchange.
+0004: pub enum Dex {
+0005:     // Represent a Uniswap V2-style pool.
+0006:     UniswapV2,
+0007:     // Represent a SushiSwap-style pool.
+0008:     SushiSwap,
+0009: }
+0010: 
+0011: // Implement human-readable output for DEX names.
+0012: impl std::fmt::Display for Dex {
+0013:     // Format one DEX identifier into the supplied formatter.
+0014:     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+0015:         // Select the correct display label.
+0016:         match self {
+0017:             // Display the Uniswap label.
+0018:             Self::UniswapV2 => write!(formatter, "Uniswap V2"),
+0019:             // Display the SushiSwap label.
+0020:             Self::SushiSwap => write!(formatter, "SushiSwap"),
+0021:         }
+0022:     }
+0023: }
+
+===== src/arbitrage/opportunity.rs =====
+0001: // Import the DEX identifier stored by each opportunity.
+0002: use super::dex::Dex;
+0003: // Import the quote structure returned by the pool pricing engine.
+0004: use crate::pools::pool::Quote;
+0005: 
+0006: // Store every economic input and result for one complete arbitrage cycle.
+0007: #[derive(Clone, Debug)]
+0008: pub struct Opportunity {
+0009:     // Store the starting token symbol.
+0010:     pub token_in: String,
+0011:     // Store the intermediate token symbol.
+0012:     pub token_mid: String,
+0013:     // Store the starting capital in base units.
+0014:     pub amount_in: u128,
+0015:     // Store the complete quote for leg one.
+0016:     pub quote_first: Quote,
+0017:     // Store the complete quote for leg two.
+0018:     pub quote_second: Quote,
+0019:     // Store the final amount after both legs.
+0020:     pub amount_out: u128,
+0021:     // Store the gross profit before gas.
+0022:     pub gross_profit: i128,
+0023:     // Store the estimated gas cost in starting-token base units.
+0024:     pub gas_cost: u128,
+0025:     // Store the net profit after gas.
+0026:     pub net_profit: i128,
+0027:     // Store the venue used for the first leg.
+0028:     pub buy_dex: Dex,
+0029:     // Store the venue used for the second leg.
+0030:     pub sell_dex: Dex,
+0031: }
+0032: 
+0033: // Implement profitability helpers for opportunities.
+0034: impl Opportunity {
+0035:     // Return true when this route clears the configured minimum profit.
+0036:     pub fn is_profitable(&self, minimum_profit: u128) -> bool {
+0037:         // Compare signed net profit against the unsigned threshold safely.
+0038:         self.net_profit > minimum_profit as i128
+0039:     }
+0040: }
+
+===== src/arbitrage/engine.rs =====
+0001: // Import the complete opportunity record returned from route evaluation.
+0002: use super::opportunity::Opportunity;
+0003: // Import the pool model used to produce swap quotes.
+0004: use crate::pools::pool::Pool;
+0005: // Import the token model used to define the route.
+0006: use crate::tokens::token::Token;
+0007: 
+0008: // Define the arbitrage scanner and its configuration.
+0009: pub struct ArbitrageEngine {
+0010:     // Store every liquidity pool currently known to the scanner.
+0011:     pools: Vec<Pool>,
+0012:     // Store the minimum net profit that the caller considers actionable.
+0013:     minimum_profit: u128,
+0014:     // Store the estimated cost of executing both legs.
+0015:     gas_cost: u128,
+0016: }
+0017: 
+0018: // Implement market management and route evaluation.
+0019: impl ArbitrageEngine {
+0020:     // Create a new empty arbitrage engine.
+0021:     pub fn new(minimum_profit: u128, gas_cost: u128) -> Self {
+0022:         // Return a scanner with no pools loaded yet.
+0023:         Self {
+0024:             // Start with an empty market database.
+0025:             pools: Vec::new(),
+0026:             // Store the configured profit threshold.
+0027:             minimum_profit,
+0028:             // Store the configured gas estimate.
+0029:             gas_cost,
+0030:         }
+0031:     }
+0032: 
+0033:     // Add a pool to the scanner's market database.
+0034:     pub fn add_pool(&mut self, pool: Pool) {
+0035:         // Append the supplied pool to the internal list.
+0036:         self.pools.push(pool);
+0037:     }
+0038: 
+0039:     // Expose the minimum-profit threshold for reporting.
+0040:     pub fn minimum_profit(&self) -> u128 {
+0041:         // Return the configured threshold.
+0042:         self.minimum_profit
+0043:     }
+0044: 
+0045:     // Scan all two-pool token_in -> token_mid -> token_in routes.
+0046:     pub fn scan(
+0047:         &self,
+0048:         token_in: &Token,
+0049:         token_mid: &Token,
+0050:         amount_in: u128,
+0051:     ) -> Vec<Opportunity> {
+0052:         // Create a vector that will contain every valid route.
+0053:         let mut candidates = Vec::new();
+0054: 
+0055:         // Try every pool as the first leg.
+0056:         for first_pool in &self.pools {
+0057:             // Skip pools that cannot perform token_in -> token_mid.
+0058:             if !first_pool.supports_pair(token_in, token_mid) {
+0059:                 // Continue to the next first-leg pool.
+0060:                 continue;
+0061:             }
+0062: 
+0063:             // Ask the first pool for a quote.
+0064:             let Some(quote_first) = first_pool.quote(token_in, amount_in) else {
+0065:                 // Skip this route if the first quote is invalid.
+0066:                 continue;
+0067:             };
+0068: 
+0069:             // Try every different pool as the second leg.
+0070:             for second_pool in &self.pools {
+0071:                 // Do not execute both legs against the same pool.
+0072:                 if std::ptr::eq(first_pool, second_pool) {
+0073:                     // Continue to the next second-leg pool.
+0074:                     continue;
+0075:                 }
+0076: 
+0077:                 // Skip pools that cannot perform token_mid -> token_in.
+0078:                 if !second_pool.supports_pair(token_mid, token_in) {
+0079:                     // Continue to the next second-leg pool.
+0080:                     continue;
+0081:                 }
+0082: 
+0083:                 // Quote the second leg using the first leg's output.
+0084:                 let Some(quote_second) = second_pool.quote(token_mid, quote_first.amount_out) else {
+0085:                     // Skip the route when the second quote is invalid.
+0086:                     continue;
+0087:                 };
+0088: 
+0089:                 // Save the final output returned to the starting token.
+0090:                 let amount_out = quote_second.amount_out;
+0091:                 // Calculate gross profit before gas.
+0092:                 let gross_profit = amount_out as i128 - amount_in as i128;
+0093:                 // Calculate net profit after the estimated execution cost.
+0094:                 let net_profit = gross_profit - self.gas_cost as i128;
+0095: 
+0096:                 // Create the complete opportunity record.
+0097:                 candidates.push(Opportunity {
+0098:                     // Save the starting token symbol.
+0099:                     token_in: token_in.symbol.clone(),
+0100:                     // Save the intermediate token symbol.
+0101:                     token_mid: token_mid.symbol.clone(),
+0102:                     // Save starting capital.
+0103:                     amount_in,
+0104:                     // Save the first-leg quote.
+0105:                     quote_first: quote_first.clone(),
+0106:                     // Save the second-leg quote.
+0107:                     quote_second,
+0108:                     // Save final output.
+0109:                     amount_out,
+0110:                     // Save gross profit.
+0111:                     gross_profit,
+0112:                     // Save gas cost.
+0113:                     gas_cost: self.gas_cost,
+0114:                     // Save net profit.
+0115:                     net_profit,
+0116:                     // Store the first venue.
+0117:                     buy_dex: first_pool.dex,
+0118:                     // Store the second venue.
+0119:                     sell_dex: second_pool.dex,
+0120:                 });
+0121:             }
+0122:         }
+0123: 
+0124:         // Put the highest-net-profit route first for easy reporting.
+0125:         candidates.sort_by(|left, right| right.net_profit.cmp(&left.net_profit));
+0126: 
+0127:         // Return every route so the caller can inspect both profitable and rejected candidates.
+0128:         candidates
+0129:     }
+0130: 
+0131: }

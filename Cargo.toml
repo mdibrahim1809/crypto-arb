@@ -1,0 +1,11 @@
+# This file tells Cargo how to build the Rust project.
+[package]
+# This is the executable and package name shown by Cargo.
+name = "crypto-arb"
+# This is the current version of our application.
+version = "0.2.0"
+# Rust 2021 gives us the language and module behavior used by this project.
+edition = "2021"
+
+# This project intentionally uses only the Rust standard library at this stage.
+[dependencies]
