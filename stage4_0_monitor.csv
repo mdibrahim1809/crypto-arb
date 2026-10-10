@@ -1,0 +1,1 @@
+timestamp_unix,block,source_dex,source_pool,source_fee_bps,destination_dex,destination_pool,destination_fee_bps,start_usdc,intermediate_weth,final_usdc,gross_profit_usdc,estimated_gas_usdc,estimated_net_profit_usdc,passes_threshold

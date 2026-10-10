@@ -118,8 +118,7 @@ impl Pool {
 
         // Calculate the portion of the input that remains after the pool fee.
         let fee_adjusted_input =
-            amount_in.saturating_mul(FEE_DENOMINATOR - self.fee_bps as u128)
-                / FEE_DENOMINATOR;
+            amount_in.saturating_mul(FEE_DENOMINATOR - self.fee_bps as u128) / FEE_DENOMINATOR;
 
         // Calculate the explicit fee in the input token's base units.
         let fee_amount = amount_in.saturating_sub(fee_adjusted_input);

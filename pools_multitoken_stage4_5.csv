@@ -1,0 +1,10 @@
+# Stage 4.5 starter registry: Ethereum mainnet V2-style pools
+# Format: dex,pair_address,fee_bps
+# Pair addresses sourced from public pool listings / Etherscan; verify on your own RPC before relying on results.
+# Fee is configured as 30 bps (0.30%) for these V2 pools.
+dex,pair_address,fee_bps
+UniswapV2,0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc,30
+SushiSwapV2,0x397ff1542f962076d0bfe58ea045ffa2d347aca0,30
+UniswapV2,0x0d4a11d5eeaac28ec3f61d100daf4d40471f1852,30
+SushiSwapV2,0x06da0fd433c1a5d7a4faa01111c044910a184553,30
+UniswapV2,0x3041cbd36888becc7bbcbc0045e3b1f144466f5f,30

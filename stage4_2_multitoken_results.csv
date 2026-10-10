@@ -1,0 +1,3 @@
+route,start_usdc,final_usdc,gross_usdc,gas_usdc,net_usdc
+"UniswapV2:0xa0b8…eb48→0xc02a…6cc2 | SushiSwapV2:0xc02a…6cc2→0xa0b8…eb48",50.00000000,49.70212700,-0.29787300,1.50500921,-1.80288221
+"SushiSwapV2:0xa0b8…eb48→0xc02a…6cc2 | UniswapV2:0xc02a…6cc2→0xa0b8…eb48",50.00000000,49.66276700,-0.33723300,1.50500921,-1.84224221

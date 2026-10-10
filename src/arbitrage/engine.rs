@@ -43,12 +43,7 @@ impl ArbitrageEngine {
     }
 
     // Scan all two-pool token_in -> token_mid -> token_in routes.
-    pub fn scan(
-        &self,
-        token_in: &Token,
-        token_mid: &Token,
-        amount_in: u128,
-    ) -> Vec<Opportunity> {
+    pub fn scan(&self, token_in: &Token, token_mid: &Token, amount_in: u128) -> Vec<Opportunity> {
         // Create a vector that will contain every valid route.
         let mut candidates = Vec::new();
 
@@ -81,7 +76,8 @@ impl ArbitrageEngine {
                 }
 
                 // Quote the second leg using the first leg's output.
-                let Some(quote_second) = second_pool.quote(token_mid, quote_first.amount_out) else {
+                let Some(quote_second) = second_pool.quote(token_mid, quote_first.amount_out)
+                else {
                     // Skip the route when the second quote is invalid.
                     continue;
                 };
@@ -127,5 +123,4 @@ impl ArbitrageEngine {
         // Return every route so the caller can inspect both profitable and rejected candidates.
         candidates
     }
-
 }

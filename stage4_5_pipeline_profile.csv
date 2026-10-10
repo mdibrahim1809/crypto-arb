@@ -1,0 +1,2 @@
+block,pools_configured,pools_loaded,unique_tokens,routes,optimizer_steps,quote_evaluations,block_rpc_ms,metadata_rpc_ms,decimals_rpc_ms,reserves_rpc_ms,route_generation_ms,quote_optimization_ms,total_ms
+26164011,5,5,3,10,100,1000,275.225,89.015,96.286,88.052,0.013,1.366,550.383

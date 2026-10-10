@@ -11,18 +11,12 @@ struct RpcClient {
 
 impl RpcClient {
     fn new(endpoint: String) -> Result<Self, Box<dyn Error>> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
         Ok(Self { client, endpoint })
     }
 
-    fn call(
-        &self,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, Box<dyn Error>> {
+    fn call(&self, method: &str, params: Value) -> Result<Value, Box<dyn Error>> {
         let response = self
             .client
             .post(&self.endpoint)
@@ -38,16 +32,12 @@ impl RpcClient {
         let body: Value = response.json()?;
 
         if let Some(error) = body.get("error") {
-            return Err(
-                format!("RPC error for {method}: {error}").into()
-            );
+            return Err(format!("RPC error for {method}: {error}").into());
         }
 
         body.get("result")
             .cloned()
-            .ok_or_else(|| {
-                format!("RPC response has no result for {method}").into()
-            })
+            .ok_or_else(|| format!("RPC response has no result for {method}").into())
     }
 }
 
@@ -74,9 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("==================================================");
 
     let endpoint = env::var("ETH_RPC_URL")
-        .map_err(|_| {
-            "ETH_RPC_URL is missing. Set it to your Ethereum RPC endpoint."
-        })?;
+        .map_err(|_| "ETH_RPC_URL is missing. Set it to your Ethereum RPC endpoint.")?;
 
     let rpc = RpcClient::new(endpoint)?;
 
@@ -108,8 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let gas_price_wei = parse_hex_quantity(&gas_price)?;
 
-    let gas_price_gwei =
-        gas_price_wei as f64 / 1_000_000_000.0;
+    let gas_price_gwei = gas_price_wei as f64 / 1_000_000_000.0;
 
     println!("Gas price: {:.4} Gwei", gas_price_gwei);
 

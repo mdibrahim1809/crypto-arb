@@ -1,0 +1,5 @@
+# Stage 3.9 registry: dex,pair_address,fee_bps
+# Only add VERIFIED Ethereum Mainnet USDC/WETH V2-compatible pools.
+# fee_bps is the swap fee in basis points; verify each DEX's actual fee.
+UniswapV2,0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc,30
+SushiSwapV2,0x397ff1542f962076d0bfe58ea045ffa2d347aca0,30

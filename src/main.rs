@@ -63,7 +63,7 @@ fn format_decimal(value: f64) -> String {
 }
 
 // Format a raw token amount as a human-readable dollar value for USDC.
-fn format_usdc(raw_amount: u128) -> String { 
+fn format_usdc(raw_amount: u128) -> String {
     // Convert six-decimal USDC base units to a floating-point number for display only.
     let value = raw_amount as f64 / 1_000_000.0;
     // Return the value with a dollar sign and comma separators.
@@ -115,11 +115,20 @@ fn print_opportunity(opportunity: &Opportunity, min_profit: u128) {
     println!("------------------------------------------------------------");
 
     // Print the exact first-leg input amount stored inside the first quote.
-    println!("Input:             {}", format_usdc(opportunity.quote_first.amount_in));
+    println!(
+        "Input:             {}",
+        format_usdc(opportunity.quote_first.amount_in)
+    );
     // Print the first-leg token amount received.
-    println!("Output:            {}", format_eth(opportunity.quote_first.amount_out));
+    println!(
+        "Output:            {}",
+        format_eth(opportunity.quote_first.amount_out)
+    );
     // Print the first-leg swap fee in its native input unit.
-    println!("Swap fee:          {}", format_usdc(opportunity.quote_first.fee_amount));
+    println!(
+        "Swap fee:          {}",
+        format_usdc(opportunity.quote_first.fee_amount)
+    );
     // Print the first-leg price impact.
     println!(
         "Price impact:      {}",
@@ -132,11 +141,17 @@ fn print_opportunity(opportunity: &Opportunity, min_profit: u128) {
     println!("------------------------------------------------------------");
 
     // Print the exact second-leg input amount stored inside the second quote.
-    println!("Input:             {}", format_eth(opportunity.quote_second.amount_in));
+    println!(
+        "Input:             {}",
+        format_eth(opportunity.quote_second.amount_in)
+    );
     // Print the second-leg output amount.
     println!("Output:            {}", format_usdc(opportunity.amount_out));
     // Print the second-leg swap fee in ETH because ETH is the input to leg two.
-    println!("Swap fee:          {}", format_eth(opportunity.quote_second.fee_amount));
+    println!(
+        "Swap fee:          {}",
+        format_eth(opportunity.quote_second.fee_amount)
+    );
     // Print the second-leg price impact.
     println!(
         "Price impact:      {}",
@@ -153,12 +168,18 @@ fn print_opportunity(opportunity: &Opportunity, min_profit: u128) {
     // Print the final output after both swaps.
     println!("Final capital:     {}", format_usdc(opportunity.amount_out));
     // Print gross profit before gas.
-    println!("Gross profit:      {}", format_profit(opportunity.gross_profit));
+    println!(
+        "Gross profit:      {}",
+        format_profit(opportunity.gross_profit)
+    );
     // Print the estimated gas cost.
     println!("Estimated gas:     {}", format_usdc(opportunity.gas_cost));
 
     // Print net profit after gas.
-    println!("Net profit:        {}", format_profit(opportunity.net_profit));
+    println!(
+        "Net profit:        {}",
+        format_profit(opportunity.net_profit)
+    );
 
     // Calculate the net ROI using the starting capital.
     let roi = opportunity.net_profit as f64 / opportunity.amount_in as f64 * 100.0;
