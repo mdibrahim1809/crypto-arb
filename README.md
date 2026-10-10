@@ -1,124 +1,116 @@
-# Crypto Arbitrage Engine — Stage 2
+# Crypto Arbitrage Engine — Stage 3.1
 
-This is the Stage 2 replacement for the `crypto-arb` Rust project.
+A Rust-based crypto arbitrage research project. Stage 3.1 adds **read-only Ethereum Mainnet RPC connectivity** using Alchemy (or any compatible Ethereum JSON-RPC endpoint).
 
-## What changed
+> **Current status:** Stage 2 simulated quote engine and two-pool route scanner; Stage 3.1 live RPC connectivity. This is not yet a live arbitrage bot and does not submit transactions.
 
-Stage 2 fixes the warnings from the earlier build and adds a proper quote/reporting pipeline.
+## Stage 3.1 — What works
 
-The program now:
+The `stage3_rpc` binary:
 
-1. Represents USDC and ETH with correct base-unit decimal conventions.
-2. Uses realistic simulated pool reserve scales.
-3. Calculates fee-adjusted AMM output.
-4. Calculates the swap fee for every leg.
-5. Estimates price impact in basis points.
-6. Scans every valid two-pool route.
-7. Sorts routes by net profit.
-8. Calculates gross profit, gas, net profit, and ROI.
-9. Prints the opportunity fields directly, so the compiler no longer reports those fields as unused.
-10. Reads the liquidity field during pair validation, removing that warning.
-11. Uses `is_profitable()` during reporting, removing that warning.
-12. Keeps the build dependency-free.
+- Reads an Ethereum RPC endpoint from the `ETH_RPC_URL` environment variable.
+- Calls `eth_chainId` to identify the connected network.
+- Calls `eth_blockNumber` to read the latest block number.
+- Calls `eth_gasPrice` to read the node's current gas-price quote.
+- Handles HTTP failures, RPC errors, missing results, and malformed hexadecimal quantities.
+- Keeps wallet signing and transaction execution disabled.
 
-## Expected test behavior
+## Requirements
 
-The supplied test market intentionally contains a price spread:
+- Rust toolchain and Cargo
+- An Ethereum JSON-RPC provider, such as [Alchemy](https://www.alchemy.com/)
+- An enabled Ethereum Mainnet HTTPS endpoint
 
-- Uniswap V2 has 105 ETH against 40,000 USDC.
-- SushiSwap has 95 ETH against 40,000 USDC.
-- The test starts with 1,000 USDC.
-- Each pool charges 30 bps.
-- The simulated gas cost is 5 USDC.
+## Configure the RPC endpoint
 
-The best route should therefore be:
+In PowerShell, from the project directory, set the endpoint for the current terminal session:
 
-```text
-USDC
-  ↓
-Uniswap V2
-  ↓
-ETH
-  ↓
-SushiSwap
-  ↓
-USDC
+```powershell
+$env:ETH_RPC_URL = "YOUR_ETHEREUM_HTTPS_RPC_ENDPOINT"
 ```
 
-The exact integer output depends only on the formulas in the source. With the supplied values, the cycle is profitable after the simulated gas estimate.
+Replace the placeholder with your own endpoint. **Never commit your API key, paste it into source code, or publish it in logs/screenshots.** If an endpoint has been exposed, rotate its API key in your provider dashboard.
 
-## Run
+## Run Stage 3.1
 
-From the project directory:
+From the repository root:
 
 ```powershell
 cargo check
+cargo run --bin stage3_rpc
+```
+
+To build an optimized version:
+
+```powershell
+cargo build --release --bin stage3_rpc
+```
+
+A successful run should display the chain ID, latest block number, and gas price. Ethereum Mainnet uses chain ID `1`. Values change as the network advances.
+
+## Run the Stage 2 simulator
+
+The original simulated quote engine remains available:
+
+```powershell
 cargo run
 ```
 
-Then build an optimized binary:
+It models USDC/ETH pools on Uniswap V2 and SushiSwap, quotes two-leg swaps, estimates fees and price impact, ranks routes by net profit, and reports the result using simulated reserves and a configured gas estimate.
 
-```powershell
-cargo build --release
-```
+**Simulator results are not evidence of real-world profitability.** The Stage 2 market is synthetic.
 
-## Files
+## Current architecture
 
 ```text
-crypto-arb-stage2/
+Stage 2 simulator
+  └─ Simulated pools → AMM quotes → two-pool route scanner → report
+
+Stage 3.1
+  └─ ETH_RPC_URL → Ethereum JSON-RPC → chain ID / block / gas price
+
+Planned next
+  └─ Read on-chain DEX pool state → live quotes → route scanning
+     → gas and execution-cost model → alerts → paper execution
+```
+
+## Planned work
+
+1. **Stage 3.2:** Read and validate on-chain pool contract data.
+2. Read token addresses and reserves from supported DEX pools.
+3. Update the quote engine to use live pool state.
+4. Expand route scanning across multiple pools and token pairs.
+5. Improve profitability estimates with realistic gas, fees, and execution assumptions.
+6. Add opportunity monitoring and paper-trading evaluation.
+
+Live data, price differences, and theoretical quotes do not guarantee executable profit. Reserves can change, transactions can fail, and gas, slippage, latency, and MEV can erase a spread.
+
+## Security boundary
+
+At this stage, the project:
+
+- Does **not** sign transactions.
+- Does **not** submit swaps.
+- Does **not** use private keys.
+- Does **not** execute flash loans.
+- Does **not** trade real funds.
+
+Keep this boundary in place until the live-data pipeline, quote calculations, risk controls, and paper-trading results have been thoroughly tested.
+
+## Repository layout
+
+```text
+crypto-arb/
 ├── Cargo.toml
+├── Cargo.lock
 ├── README.md
-├── LINE_BY_LINE_MAP.txt
 └── src/
     ├── main.rs
-    ├── tokens/
-    │   ├── mod.rs
-    │   └── token.rs
+    ├── bin/
+    │   └── stage3_rpc.rs
+    ├── arbitrage/
     ├── pools/
-    │   ├── mod.rs
-    │   └── pool.rs
-    └── arbitrage/
-        ├── mod.rs
-        ├── dex.rs
-        ├── engine.rs
-        └── opportunity.rs
+    └── tokens/
 ```
 
-## Safety boundary
-
-This remains a local simulator.
-
-It does not contain:
-
-- private keys
-- wallet signing
-- live RPC execution
-- real swap transactions
-- flash-loan execution
-- real funds
-
-That separation is deliberate.
-
-## Next stage
-
-The correct next engineering layer is real market data:
-
-```text
-Real RPC / WebSocket
-        ↓
-Pool discovery
-        ↓
-Live reserves / quotes
-        ↓
-Route engine
-        ↓
-Profitability + gas
-        ↓
-Paper execution
-        ↓
-Risk controls
-        ↓
-Only then live execution
-```
-
-Do not insert private keys into this simulator.
+The exact module contents may evolve as the project progresses.
